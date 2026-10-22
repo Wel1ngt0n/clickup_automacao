@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: clickup-dependency-webhook
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 2 --threads 4 --timeout 60 app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: CLICKUP_WORKSPACE_ID
+        value: "36953879"
+      - key: CLICKUP_FATHER_FIELD_ID
+        value: 553cb505-acc0-401e-8760-f73879a3aad7
+      - key: CLICKUP_FLOW_STEP_FIELD_ID
+        value: eeb8ae22-76b0-4441-a6e8-d8528998d102
+      - key: CLICKUP_MAIN_LIST_ID
+        value: "211186088"
+      - key: CLICKUP_API_TOKEN
+        sync: false
+      - key: CLICKUP_WEBHOOK_SECRET
+        sync: false
