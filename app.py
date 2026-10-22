@@ -83,11 +83,15 @@ def step_number(task: dict, field_id: str):
         return None
 
 
-def reconcile_parent_status(client: ClickUpClient, parent: dict, steps: list[dict]) -> dict:
+def reconcile_parent_status(
+    client: ClickUpClient, parent: dict, steps: list[dict], *, allow_later_steps: bool = True
+) -> dict:
     flow_field_id = os.environ.get("CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID)
     candidates = []
     for step in steps:
         number = step_number(step, flow_field_id)
+        if number not in INITIAL_FLOW_STEPS and not allow_later_steps:
+            continue
         if number is not None and is_pending(step):
             candidates.append((number, step))
 
@@ -195,7 +199,9 @@ def reconcile_task(task_id: str) -> dict:
         dependencies_added.append(related_step_id)
         existing_dependencies.add((parent_id, related_step_id))
 
-    status_result = reconcile_parent_status(client, parent, steps)
+    status_result = reconcile_parent_status(
+        client, parent, steps, allow_later_steps=gate["open"]
+    )
     return {
         "action": "reconciled",
         "parent_custom_id": father_custom_id,
