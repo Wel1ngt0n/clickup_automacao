@@ -138,6 +138,22 @@ def reconcile_task(task_id: str) -> dict:
     else:
         return {"action": "ignored", "reason": "task_outside_workflow", "task_id": task_id}
 
+    parent_list_id = str((parent.get("list") or {}).get("id", ""))
+    if parent_list_id != main_list_id:
+        logger.warning(
+            "Tarefa %s ignorada: pai %s pertence a lista %s, nao a %s",
+            task_id,
+            parent.get("id"),
+            parent_list_id,
+            main_list_id,
+        )
+        return {
+            "action": "ignored",
+            "reason": "parent_outside_main_list",
+            "task_id": task_id,
+            "parent_id": str(parent.get("id", "")),
+        }
+
     parent_id = str(parent["id"])
     dependency_action = "not_applicable"
     if step is not None:

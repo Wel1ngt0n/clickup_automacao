@@ -72,6 +72,17 @@ reconciliação e o status volta ao valor correto.
 O webhook não cria tarefas nem remove dependências. Ele altera apenas o status do
 card principal quando o valor divergir da primeira etapa pendente.
 
+## Escopo de segurança
+
+O webhook precisa receber eventos do workspace porque as etapas ficam distribuídas
+em listas e Espaços diferentes. Isso não significa que ele alterará qualquer card:
+antes de criar uma dependência ou mudar um status, o serviço confirma que o card
+principal pertence à lista `Implantação de lojas` (`211186088`).
+
+Eventos de outros fluxos são respondidos como `ignored`. Se o webhook fosse
+registrado apenas nessa lista, eventos de criação ou conclusão das etapas externas
+não chegariam ao serviço e a atualização automática deixaria de funcionar.
+
 ## Auditoria manual
 
 O script localiza as tarefas de etapa pelo campo personalizado `_father_task_id` e
