@@ -51,6 +51,23 @@ Para cada evento de tarefa:
 6. Ordena as etapas pendentes por `flow_step`.
 7. Corrige o status do card principal para a primeira etapa pendente.
 
+### Liberação das etapas posteriores
+
+As dependências das etapas a partir do `flow_step` 5 ficam bloqueadas até que as
+três etapas iniciais existam e estejam finalizadas:
+
+| `flow_step` | Etapa inicial |
+|---:|---|
+| 2 | Cadastro Omie |
+| 3 | Onboarding |
+| 4 | Criar loja |
+
+Enquanto alguma delas estiver ausente ou pendente, tarefas posteriores que já
+tenham sido criadas são identificadas, mas suas dependências ficam como
+`deferred`. Quando a última etapa inicial for finalizada — normalmente Cadastro
+Omie — o evento dispara uma nova análise e todas as dependências posteriores são
+configuradas.
+
 Mapeamento aplicado:
 
 | `flow_step` | Status do card principal |

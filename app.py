@@ -38,6 +38,7 @@ DEFAULT_STEP_STATUS_MAP = {
     9: "treinamento",
     10: "loja entregue",
 }
+INITIAL_FLOW_STEPS = {2, 3, 4}
 
 
 def required_env(name: str) -> str:
@@ -117,6 +118,21 @@ def reconcile_parent_status(client: ClickUpClient, parent: dict, steps: list[dic
     }
 
 
+def initial_stage_gate(steps: list[dict], flow_field_id: str) -> dict:
+    by_number = {
+        number: step
+        for step in steps
+        if (number := step_number(step, flow_field_id)) in INITIAL_FLOW_STEPS
+    }
+    missing = sorted(INITIAL_FLOW_STEPS - set(by_number))
+    pending = sorted(number for number, step in by_number.items() if is_pending(step))
+    return {
+        "open": not missing and not pending,
+        "missing": missing,
+        "pending": pending,
+    }
+
+
 def reconcile_task(task_id: str) -> dict:
     token = required_env("CLICKUP_API_TOKEN")
     workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", DEFAULT_WORKSPACE_ID)
@@ -160,11 +176,18 @@ def reconcile_task(task_id: str) -> dict:
     if step is not None and all(str(item["id"]) != str(step["id"]) for item in steps):
         steps.append(step)
 
+    flow_field_id = os.environ.get("CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID)
+    gate = initial_stage_gate(steps, flow_field_id)
     existing_dependencies = dependency_pairs(parent)
     dependencies_added = []
     dependencies_ok = []
+    dependencies_deferred = []
     for related_step in steps:
         related_step_id = str(related_step["id"])
+        related_step_number = step_number(related_step, flow_field_id)
+        if related_step_number not in INITIAL_FLOW_STEPS and not gate["open"]:
+            dependencies_deferred.append(related_step_id)
+            continue
         if (parent_id, related_step_id) in existing_dependencies:
             dependencies_ok.append(related_step_id)
             continue
@@ -179,6 +202,8 @@ def reconcile_task(task_id: str) -> dict:
         "parent_id": parent_id,
         "dependencies_added": dependencies_added,
         "dependencies_ok": dependencies_ok,
+        "dependencies_deferred": dependencies_deferred,
+        "initial_stage_gate": gate,
         "status": status_result,
         "steps_found": len(steps),
     }
