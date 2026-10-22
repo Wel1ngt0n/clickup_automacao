@@ -155,25 +155,30 @@ def reconcile_task(task_id: str) -> dict:
         }
 
     parent_id = str(parent["id"])
-    dependency_action = "not_applicable"
-    if step is not None:
-        step_id = str(step["id"])
-        if (parent_id, step_id) in dependency_pairs(parent):
-            dependency_action = "already_exists"
-        else:
-            client.add_waiting_on_dependency(parent_id, step_id)
-            dependency_action = "dependency_added"
-
     steps = list(client.find_steps(father_field_id, str(father_custom_id)))
     # Inclui o evento mesmo se a busca indexada do ClickUp ainda nao refletir uma criacao recente.
     if step is not None and all(str(item["id"]) != str(step["id"]) for item in steps):
         steps.append(step)
+
+    existing_dependencies = dependency_pairs(parent)
+    dependencies_added = []
+    dependencies_ok = []
+    for related_step in steps:
+        related_step_id = str(related_step["id"])
+        if (parent_id, related_step_id) in existing_dependencies:
+            dependencies_ok.append(related_step_id)
+            continue
+        client.add_waiting_on_dependency(parent_id, related_step_id)
+        dependencies_added.append(related_step_id)
+        existing_dependencies.add((parent_id, related_step_id))
+
     status_result = reconcile_parent_status(client, parent, steps)
     return {
         "action": "reconciled",
         "parent_custom_id": father_custom_id,
         "parent_id": parent_id,
-        "dependency": dependency_action,
+        "dependencies_added": dependencies_added,
+        "dependencies_ok": dependencies_ok,
         "status": status_result,
         "steps_found": len(steps),
     }

@@ -83,6 +83,12 @@ Eventos de outros fluxos são respondidos como `ignored`. Se o webhook fosse
 registrado apenas nessa lista, eventos de criação ou conclusão das etapas externas
 não chegariam ao serviço e a atualização automática deixaria de funcionar.
 
+Se alguém remover manualmente uma dependência, o próximo evento recebido para a
+etapa ou para o card principal faz uma nova auditoria de todas as etapas e recria a
+relação ausente. O serviço não recria tarefas apagadas e não restaura um
+`_father_task_id` removido, pois nesses casos não existe informação suficiente para
+identificar a relação com segurança.
+
 ## Auditoria manual
 
 O script localiza as tarefas de etapa pelo campo personalizado `_father_task_id` e
