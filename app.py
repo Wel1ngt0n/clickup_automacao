@@ -158,7 +158,12 @@ def reconcile_task(task_id: str) -> dict:
         father_custom_id = str(parent["custom_id"])
         step = None
     else:
-        return {"action": "ignored", "reason": "task_outside_workflow", "task_id": task_id}
+        return {
+            "action": "ignored",
+            "reason": "task_outside_workflow",
+            "task_id": task_id,
+            "task_name": event_task.get("name"),
+        }
 
     parent_list_id = str((parent.get("list") or {}).get("id", ""))
     if parent_list_id != main_list_id:
@@ -173,7 +178,9 @@ def reconcile_task(task_id: str) -> dict:
             "action": "ignored",
             "reason": "parent_outside_main_list",
             "task_id": task_id,
+            "task_name": event_task.get("name"),
             "parent_id": str(parent.get("id", "")),
+            "store_name": parent.get("name"),
         }
 
     parent_id = str(parent["id"])
@@ -208,8 +215,11 @@ def reconcile_task(task_id: str) -> dict:
     )
     return {
         "action": "reconciled",
+        "store_name": parent.get("name"),
         "parent_custom_id": father_custom_id,
         "parent_id": parent_id,
+        "trigger_task_name": event_task.get("name"),
+        "trigger_task_id": task_id,
         "dependencies_added": dependencies_added,
         "dependencies_ok": dependencies_ok,
         "dependencies_deferred": dependencies_deferred,
@@ -244,7 +254,29 @@ def clickup_webhook():
 
     try:
         result = reconcile_task(str(task_id))
-        logger.info("Evento %s: %s", event, result)
+        if result.get("action") == "reconciled":
+            logger.info(
+                "Evento=%s | loja=%r | custom_id=%s | tarefa_evento=%r (%s) | "
+                "dependencias_adicionadas=%d | dependencias_ok=%d | "
+                "dependencias_adiadas=%d | status=%s",
+                event,
+                result.get("store_name"),
+                result.get("parent_custom_id"),
+                result.get("trigger_task_name"),
+                result.get("trigger_task_id"),
+                len(result.get("dependencies_added", [])),
+                len(result.get("dependencies_ok", [])),
+                len(result.get("dependencies_deferred", [])),
+                result.get("status"),
+            )
+        else:
+            logger.info(
+                "Evento=%s | tarefa=%r (%s) | resultado=%s",
+                event,
+                result.get("task_name"),
+                task_id,
+                result,
+            )
         return jsonify(result), 200
     except ClickUpError as exc:
         # Retorna erro para o ClickUp tentar entregar novamente em falhas transitorias.
