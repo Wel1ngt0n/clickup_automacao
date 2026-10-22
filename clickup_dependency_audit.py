@@ -26,8 +26,8 @@ class ClickUpError(RuntimeError):
 
 class ClickUpClient:
     def __init__(self, token: str, workspace_id: str) -> None:
-        self.token = token
-        self.workspace_id = workspace_id
+        self.token = token.strip()
+        self.workspace_id = workspace_id.strip()
 
     def request(self, method: str, path: str, *, query=None, body=None):
         url = f"{API_BASE}{path}"

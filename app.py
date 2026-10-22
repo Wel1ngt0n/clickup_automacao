@@ -45,7 +45,7 @@ def required_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         raise RuntimeError(f"Variavel obrigatoria ausente: {name}")
-    return value
+    return value.strip()
 
 
 def valid_signature(raw_body: bytes) -> bool:
@@ -86,7 +86,9 @@ def step_number(task: dict, field_id: str):
 def reconcile_parent_status(
     client: ClickUpClient, parent: dict, steps: list[dict], *, allow_later_steps: bool = True
 ) -> dict:
-    flow_field_id = os.environ.get("CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID)
+    flow_field_id = os.environ.get(
+        "CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID
+    ).strip()
     candidates = []
     for step in steps:
         number = step_number(step, flow_field_id)
@@ -139,9 +141,9 @@ def initial_stage_gate(steps: list[dict], flow_field_id: str) -> dict:
 
 def reconcile_task(task_id: str) -> dict:
     token = required_env("CLICKUP_API_TOKEN")
-    workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", DEFAULT_WORKSPACE_ID)
-    father_field_id = os.environ.get("CLICKUP_FATHER_FIELD_ID", DEFAULT_FATHER_FIELD_ID)
-    main_list_id = os.environ.get("CLICKUP_MAIN_LIST_ID", DEFAULT_MAIN_LIST_ID)
+    workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", DEFAULT_WORKSPACE_ID).strip()
+    father_field_id = os.environ.get("CLICKUP_FATHER_FIELD_ID", DEFAULT_FATHER_FIELD_ID).strip()
+    main_list_id = os.environ.get("CLICKUP_MAIN_LIST_ID", DEFAULT_MAIN_LIST_ID).strip()
     client = ClickUpClient(token, workspace_id)
 
     event_task = client.get_task_by_internal_id(task_id)
@@ -180,7 +182,9 @@ def reconcile_task(task_id: str) -> dict:
     if step is not None and all(str(item["id"]) != str(step["id"]) for item in steps):
         steps.append(step)
 
-    flow_field_id = os.environ.get("CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID)
+    flow_field_id = os.environ.get(
+        "CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID
+    ).strip()
     gate = initial_stage_gate(steps, flow_field_id)
     existing_dependencies = dependency_pairs(parent)
     dependencies_added = []
