@@ -6,6 +6,8 @@ import hashlib
 import hmac
 import logging
 import os
+import threading
+import time
 
 from flask import Flask, jsonify, request
 
@@ -27,18 +29,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
-DEFAULT_STEP_STATUS_MAP = {
-    2: "cadastro omie",
-    3: "onboarding",
-    4: "criação de loja",
-    5: "integração erp",
-    6: "cadastro de produtos",
-    7: "subir apps",
-    8: "controle de qualidade",
-    9: "treinamento",
-    10: "loja entregue",
-}
 INITIAL_FLOW_STEPS = {2, 3, 4}
+INTEGRATION_FLOW_STEP = 5
+STATUS_INTEGRACAO = "integração erp"
 
 
 def required_env(name: str) -> str:
@@ -72,7 +65,7 @@ def is_pending(task: dict) -> bool:
     status = task.get("status") or {}
     if isinstance(status, dict):
         return str(status.get("type", "")).lower() not in {"done", "closed"}
-    return status_name(task) not in {"finalizado", "concluído", "complete", "closed"}
+    return status_name(task) not in {"finalizado", "concluído", "concluido", "complete", "closed"}
 
 
 def step_number(task: dict, field_id: str):
@@ -83,66 +76,42 @@ def step_number(task: dict, field_id: str):
         return None
 
 
-def reconcile_parent_status(
-    client: ClickUpClient, parent: dict, steps: list[dict], *, allow_later_steps: bool = True
-) -> dict:
-    flow_field_id = os.environ.get(
-        "CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID
-    ).strip()
-    candidates = []
-    for step in steps:
-        number = step_number(step, flow_field_id)
-        if number not in INITIAL_FLOW_STEPS and not allow_later_steps:
-            continue
-        if number is not None and is_pending(step):
-            candidates.append((number, step))
-
-    if not candidates:
-        return {"action": "unchanged", "reason": "no_pending_mapped_step"}
-
-    number, current_step = min(candidates, key=lambda item: item[0])
-    desired_status = DEFAULT_STEP_STATUS_MAP.get(number)
-    if not desired_status:
-        return {"action": "unchanged", "reason": "flow_step_without_status", "flow_step": number}
-
-    current_status = status_name(parent)
-    if current_status == desired_status:
-        return {
-            "action": "already_correct",
-            "status": desired_status,
-            "flow_step": number,
-            "step_id": str(current_step["id"]),
-        }
-
-    client.update_task_status(str(parent["id"]), desired_status)
-    return {
-        "action": "status_updated",
-        "before": current_status,
-        "status": desired_status,
-        "flow_step": number,
-        "step_id": str(current_step["id"]),
-    }
+def is_integration_step(task: dict, flow_field_id: str) -> bool:
+    number = step_number(task, flow_field_id)
+    if number == INTEGRATION_FLOW_STEP:
+        return True
+    name = (task.get("name") or "").lower()
+    return "integração" in name or "integracao" in name
 
 
-def initial_stage_gate(steps: list[dict], flow_field_id: str) -> dict:
-    by_number = {
-        number: step
-        for step in steps
-        if (number := step_number(step, flow_field_id)) in INITIAL_FLOW_STEPS
-    }
-    missing = sorted(INITIAL_FLOW_STEPS - set(by_number))
-    pending = sorted(number for number, step in by_number.items() if is_pending(step))
-    return {
-        "open": not missing and not pending,
-        "missing": missing,
-        "pending": pending,
-    }
+_locks_guard = threading.Lock()
+_store_locks: dict[str, threading.Lock] = {}
+_recent_reconciliations: dict[str, dict] = {}
+DEBOUNCE_WINDOW_SECONDS = 4.0
+
+
+def get_store_lock(store_key: str) -> threading.Lock:
+    with _locks_guard:
+        if store_key not in _store_locks:
+            _store_locks[store_key] = threading.Lock()
+        return _store_locks[store_key]
+
+
+def prune_recent_cache(now: float) -> None:
+    expired = [
+        k
+        for k, v in _recent_reconciliations.items()
+        if now - v.get("time", 0) > 60.0
+    ]
+    for k in expired:
+        _recent_reconciliations.pop(k, None)
 
 
 def reconcile_task(task_id: str) -> dict:
     token = required_env("CLICKUP_API_TOKEN")
     workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", DEFAULT_WORKSPACE_ID).strip()
     father_field_id = os.environ.get("CLICKUP_FATHER_FIELD_ID", DEFAULT_FATHER_FIELD_ID).strip()
+    flow_field_id = os.environ.get("CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID).strip()
     main_list_id = os.environ.get("CLICKUP_MAIN_LIST_ID", DEFAULT_MAIN_LIST_ID).strip()
     client = ClickUpClient(token, workspace_id)
 
@@ -150,7 +119,19 @@ def reconcile_task(task_id: str) -> dict:
     father_custom_id = custom_field_value(event_task, father_field_id)
     event_list_id = str((event_task.get("list") or {}).get("id", ""))
     is_parent = event_list_id == main_list_id and bool(event_task.get("custom_id"))
+
     if father_custom_id:
+        # É uma tarefa de etapa.
+        number = step_number(event_task, flow_field_id)
+        is_int = is_integration_step(event_task, flow_field_id)
+        # Processamos apenas se for o card de integração OU uma das etapas iniciais (2, 3, 4) que podem liberar a integração
+        if not is_int and number not in INITIAL_FLOW_STEPS:
+            return {
+                "action": "ignored",
+                "reason": "unrelated_flow_step",
+                "task_id": task_id,
+                "task_name": event_task.get("name"),
+            }
         parent = client.get_task_by_custom_id(str(father_custom_id))
         step = event_task
     elif is_parent:
@@ -184,49 +165,108 @@ def reconcile_task(task_id: str) -> dict:
         }
 
     parent_id = str(parent["id"])
-    steps = list(client.find_steps(father_field_id, str(father_custom_id)))
-    # Inclui o evento mesmo se a busca indexada do ClickUp ainda nao refletir uma criacao recente.
-    if step is not None and all(str(item["id"]) != str(step["id"]) for item in steps):
-        steps.append(step)
+    store_key = str(father_custom_id)
+    store_lock = get_store_lock(store_key)
 
-    flow_field_id = os.environ.get(
-        "CLICKUP_FLOW_STEP_FIELD_ID", DEFAULT_FLOW_STEP_FIELD_ID
-    ).strip()
-    gate = initial_stage_gate(steps, flow_field_id)
-    existing_dependencies = dependency_pairs(parent)
-    dependencies_added = []
-    dependencies_ok = []
-    dependencies_deferred = []
-    for related_step in steps:
-        related_step_id = str(related_step["id"])
-        related_step_number = step_number(related_step, flow_field_id)
-        if related_step_number not in INITIAL_FLOW_STEPS and not gate["open"]:
-            dependencies_deferred.append(related_step_id)
-            continue
-        if (parent_id, related_step_id) in existing_dependencies:
-            dependencies_ok.append(related_step_id)
-            continue
-        client.add_waiting_on_dependency(parent_id, related_step_id)
-        dependencies_added.append(related_step_id)
-        existing_dependencies.add((parent_id, related_step_id))
+    with store_lock:
+        now = time.time()
+        with _locks_guard:
+            prune_recent_cache(now)
+            recent = _recent_reconciliations.get(store_key)
 
-    status_result = reconcile_parent_status(
-        client, parent, steps, allow_later_steps=gate["open"]
-    )
-    return {
-        "action": "reconciled",
-        "store_name": parent.get("name"),
-        "parent_custom_id": father_custom_id,
-        "parent_id": parent_id,
-        "trigger_task_name": event_task.get("name"),
-        "trigger_task_id": task_id,
-        "dependencies_added": dependencies_added,
-        "dependencies_ok": dependencies_ok,
-        "dependencies_deferred": dependencies_deferred,
-        "initial_stage_gate": gate,
-        "status": status_result,
-        "steps_found": len(steps),
-    }
+        if recent:
+            elapsed = now - recent.get("time", 0)
+            covered_ids = recent.get("covered_ids", set())
+            if elapsed < DEBOUNCE_WINDOW_SECONDS and str(task_id) in covered_ids:
+                logger.info(
+                    "Reconciliacao para loja %r (%s) ignorada por debounce: "
+                    "reconciliada recentemente (ha %.1fs) cobrindo a tarefa %s",
+                    parent.get("name"),
+                    store_key,
+                    elapsed,
+                    task_id,
+                )
+                return {
+                    "action": "debounced",
+                    "reason": "already_reconciled_recently",
+                    "store_name": parent.get("name"),
+                    "parent_custom_id": father_custom_id,
+                    "parent_id": parent_id,
+                    "trigger_task_name": event_task.get("name"),
+                    "trigger_task_id": task_id,
+                    "reconciled_seconds_ago": round(elapsed, 2),
+                }
+
+        steps = list(client.find_steps(father_field_id, str(father_custom_id)))
+        if step is not None and all(str(item["id"]) != str(step["id"]) for item in steps):
+            steps.append(step)
+
+        integration_step = next(
+            (s for s in steps if is_integration_step(s, flow_field_id)), None
+        )
+
+        dependency_action = "none"
+        if integration_step is not None:
+            integration_step_id = str(integration_step["id"])
+            existing_dependencies = dependency_pairs(parent)
+            if (parent_id, integration_step_id) not in existing_dependencies:
+                client.add_waiting_on_dependency(parent_id, integration_step_id)
+                dependency_action = "added"
+                time.sleep(0.15)
+            else:
+                dependency_action = "already_linked"
+
+        status_action = "none"
+        if integration_step is not None:
+            initial_steps = [
+                s for s in steps if step_number(s, flow_field_id) in INITIAL_FLOW_STEPS
+            ]
+            initial_numbers = {step_number(s, flow_field_id) for s in initial_steps}
+            initial_all_exist = INITIAL_FLOW_STEPS.issubset(initial_numbers)
+            initial_all_done = initial_all_exist and not any(is_pending(s) for s in initial_steps)
+
+            # Deveria estar em integração se as etapas iniciais (2, 3, 4) estão concluídas e o card de integração está pendente
+            should_be_in_integration = initial_all_done and is_pending(integration_step)
+
+            if should_be_in_integration:
+                current_status = status_name(parent)
+                if current_status != STATUS_INTEGRACAO:
+                    client.update_task_status(parent_id, STATUS_INTEGRACAO)
+                    status_action = "updated_to_integration"
+                    logger.info(
+                        "Loja %r (%s): status divergente %r corrigido para %r",
+                        parent.get("name"),
+                        store_key,
+                        current_status,
+                        STATUS_INTEGRACAO,
+                    )
+                else:
+                    status_action = "already_integration"
+
+        covered = {parent_id, str(task_id)}
+        if integration_step and integration_step.get("id"):
+            covered.add(str(integration_step["id"]))
+        for s in steps:
+            if s.get("id"):
+                covered.add(str(s["id"]))
+
+        with _locks_guard:
+            _recent_reconciliations[store_key] = {
+                "time": time.time(),
+                "covered_ids": covered,
+            }
+
+        return {
+            "action": "reconciled",
+            "store_name": parent.get("name"),
+            "parent_custom_id": father_custom_id,
+            "parent_id": parent_id,
+            "integration_step_found": integration_step is not None,
+            "dependency": dependency_action,
+            "status": status_action,
+            "trigger_task_name": event_task.get("name"),
+            "trigger_task_id": task_id,
+        }
 
 
 @app.get("/")
@@ -254,34 +294,43 @@ def clickup_webhook():
 
     try:
         result = reconcile_task(str(task_id))
-        if result.get("action") == "reconciled":
+        action = result.get("action")
+        if action == "reconciled":
             logger.info(
-                "Evento=%s | loja=%r | custom_id=%s | tarefa_evento=%r (%s) | "
-                "dependencias_adicionadas=%d | dependencias_ok=%d | "
-                "dependencias_adiadas=%d | status=%s",
+                "Evento=%s | loja=%r | custom_id=%s | dep_integracao=%s | status=%s | trigger=%r (%s)",
                 event,
                 result.get("store_name"),
                 result.get("parent_custom_id"),
+                result.get("dependency"),
+                result.get("status"),
                 result.get("trigger_task_name"),
                 result.get("trigger_task_id"),
-                len(result.get("dependencies_added", [])),
-                len(result.get("dependencies_ok", [])),
-                len(result.get("dependencies_deferred", [])),
-                result.get("status"),
+            )
+        elif action == "debounced":
+            logger.info(
+                "Evento=%s | loja=%r | custom_id=%s | debounced (reconciliado ha %.1fs)",
+                event,
+                result.get("store_name"),
+                result.get("parent_custom_id"),
+                result.get("reconciled_seconds_ago", 0),
             )
         else:
             logger.info(
-                "Evento=%s | tarefa=%r (%s) | resultado=%s",
+                "Evento=%s | tarefa=%r (%s) | ignorado: %s",
                 event,
                 result.get("task_name"),
                 task_id,
-                result,
+                result.get("reason"),
             )
         return jsonify(result), 200
     except ClickUpError as exc:
-        # Retorna erro para o ClickUp tentar entregar novamente em falhas transitorias.
-        logger.exception("Falha ao processar tarefa %s", task_id)
-        return jsonify({"error": "clickup_api_error", "detail": str(exc)}), 502
+        logger.exception("Falha ao processar tarefa %s: %s", task_id, exc)
+        is_rate_limit = getattr(exc, "status_code", None) == 429
+        status_code = 429 if is_rate_limit else 502
+        response = jsonify({"error": "clickup_api_error", "detail": str(exc)})
+        if is_rate_limit:
+            response.headers["Retry-After"] = "15"
+        return response, status_code
     except RuntimeError as exc:
         logger.error(str(exc))
         return jsonify({"error": "server_not_configured"}), 503

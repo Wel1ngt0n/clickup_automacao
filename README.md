@@ -41,53 +41,24 @@ assinatura válida são recusadas.
 
 ## Funcionamento
 
-Para cada evento de tarefa:
+O webhook foca na etapa de **integração da loja** (etapa 5 / `Integração ERP`):
 
-1. Busca a tarefa pelo ID interno recebido no webhook.
-2. Lê o campo `_father_task_id`.
-3. Resolve o ID personalizado do pai, como `F0H-797`, para o ID interno.
-4. Verifica se o pai já aguarda a etapa.
-5. Adiciona somente a dependência ausente.
-6. Ordena as etapas pendentes por `flow_step`.
-7. Corrige o status do card principal para a primeira etapa pendente.
+1. **Dependência Automática**: Garante que o card de integração seja adicionado como dependência do card principal da loja (`parent is waiting on integration step`).
+2. **Reconciliação de Status**: Quando as etapas iniciais (Cadastro Omie, Onboarding e Criar Loja) estiverem todas concluídas e o card de integração estiver pendente, o webhook verifica o status do card principal. Caso esteja em um status divergente (diferente de `integração erp`), ele corrige o status do card principal para `integração erp`.
+3. **Não interfere nas outras etapas**: Não cria dependências desnecessárias para as etapas iniciais nem altera status quando o card ainda está nas etapas iniciais ou após a integração já estar concluída, preservando as automações nativas do quadro.
 
-### Liberação das etapas posteriores
+### Fluxo de execução:
 
-As dependências das etapas a partir do `flow_step` 5 ficam bloqueadas até que as
-três etapas iniciais existam e estejam finalizadas:
+1. Ao receber um evento de tarefa no webhook, busca os dados da tarefa pelo ID.
+2. Se for uma etapa (possui `_father_task_id`):
+   - Se pertencer a etapas não relacionadas ao fluxo inicial/integração (etapas posteriores como 6, 7, etc.), é ignorado imediatamente.
+   - Se for o card de integração ou uma das etapas iniciais (2, 3, 4), localiza o card principal e analisa a loja.
+3. Garante a dependência do card de integração no card principal caso ainda não exista.
+4. Se as etapas 2, 3 e 4 estiverem concluídas e a integração estiver pendente, corrige o status do card principal para `integração erp` caso esteja divergente.
 
-| `flow_step` | Etapa inicial |
-|---:|---|
-| 2 | Cadastro Omie |
-| 3 | Onboarding |
-| 4 | Criar loja |
-
-Enquanto alguma delas estiver ausente ou pendente, tarefas posteriores que já
-tenham sido criadas são identificadas, mas suas dependências ficam como
-`deferred`. Quando a última etapa inicial for finalizada — normalmente Cadastro
-Omie — o evento dispara uma nova análise e todas as dependências posteriores são
-configuradas.
-
-Mapeamento aplicado:
-
-| `flow_step` | Status do card principal |
-|---:|---|
-| 2 | cadastro omie |
-| 3 | onboarding |
-| 4 | criação de loja |
-| 5 | integração erp |
-| 6 | cadastro de produtos |
-| 7 | subir apps |
-| 8 | controle de qualidade |
-| 9 | treinamento |
-| 10 | loja entregue |
-
-Se alguém avançar manualmente o card principal enquanto uma etapa anterior ainda
-estiver pendente, o evento de atualização do próprio card também dispara a
-reconciliação e o status volta ao valor correto.
-
-O webhook não cria tarefas nem remove dependências. Ele altera apenas o status do
-card principal quando o valor divergir da primeira etapa pendente.
+O serviço conta com:
+- **Retry com Backoff Exponencial**: respeita limites de taxa da API do ClickUp (`HTTP 429`) e aguarda o tempo informado no `Retry-After` ou `X-RateLimit-Reset`.
+- **Debounce e Lock por Loja**: evita rajadas e chamadas duplicadas simultâneas quando múltiplos eventos da mesma loja chegam juntos.
 
 ## Escopo de segurança
 

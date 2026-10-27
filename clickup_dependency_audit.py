@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
+import random
 import sys
 import time
 import urllib.error
@@ -19,40 +21,112 @@ DEFAULT_MAIN_LIST_ID = "211186088"
 DEFAULT_FATHER_FIELD_ID = "553cb505-acc0-401e-8760-f73879a3aad7"
 DEFAULT_FLOW_STEP_FIELD_ID = "eeb8ae22-76b0-4441-a6e8-d8528998d102"
 
+logger = logging.getLogger(__name__)
+
 
 class ClickUpError(RuntimeError):
-    pass
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class ClickUpClient:
-    def __init__(self, token: str, workspace_id: str) -> None:
+    def __init__(self, token: str, workspace_id: str, max_retries: int = 4) -> None:
         self.token = token.strip()
         self.workspace_id = workspace_id.strip()
+        self.max_retries = max_retries
+
+    def _compute_backoff(self, headers, attempt: int, is_rate_limit: bool) -> float:
+        if headers:
+            retry_after = headers.get("Retry-After")
+            if retry_after:
+                try:
+                    val = float(retry_after)
+                    if 0 < val <= 60:
+                        return val
+                except (ValueError, TypeError):
+                    pass
+            reset_header = headers.get("X-RateLimit-Reset")
+            if reset_header:
+                try:
+                    val = float(reset_header)
+                    if val > 1_000_000_000_000:
+                        val /= 1000.0
+                    if val > 1_000_000_000:
+                        delta = val - time.time()
+                        if 0 < delta <= 60:
+                            return delta + 0.5
+                    elif 0 < val <= 60:
+                        return val
+                except (ValueError, TypeError):
+                    pass
+
+        base = 2.0 if is_rate_limit else 1.5
+        jitter = random.uniform(0.1, 0.6)
+        return min(30.0, (base * (2 ** attempt)) + jitter)
 
     def request(self, method: str, path: str, *, query=None, body=None):
         url = f"{API_BASE}{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query, doseq=True)
         data = None if body is None else json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=data,
-            method=method,
-            headers={
-                "Authorization": self.token,
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="replace")
-            raise ClickUpError(f"ClickUp retornou HTTP {exc.code}: {details}") from exc
-        except urllib.error.URLError as exc:
-            raise ClickUpError(f"Falha de conexao com o ClickUp: {exc.reason}") from exc
+
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            req = urllib.request.Request(
+                url,
+                data=data,
+                method=method,
+                headers={
+                    "Authorization": self.token,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    raw = response.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as exc:
+                details = exc.read().decode("utf-8", errors="replace")
+                last_error = ClickUpError(
+                    f"ClickUp retornou HTTP {exc.code}: {details}", status_code=exc.code
+                )
+                is_rate_limit = exc.code == 429
+                is_transient = exc.code in {500, 502, 503, 504}
+                if (is_rate_limit or is_transient) and attempt < self.max_retries:
+                    wait_time = self._compute_backoff(exc.headers, attempt, is_rate_limit)
+                    logger.warning(
+                        "ClickUp retornou HTTP %d na tentativa %d/%d (%s %s). "
+                        "Aguardando %.2fs antes de tentar novamente... Detalhes: %s",
+                        exc.code,
+                        attempt + 1,
+                        self.max_retries,
+                        method,
+                        path,
+                        wait_time,
+                        details[:150],
+                    )
+                    time.sleep(wait_time)
+                    continue
+                raise last_error from exc
+            except urllib.error.URLError as exc:
+                last_error = ClickUpError(f"Falha de conexao com o ClickUp: {exc.reason}")
+                if attempt < self.max_retries:
+                    wait_time = (1.5 * (2 ** attempt)) + random.uniform(0.1, 0.5)
+                    logger.warning(
+                        "Falha de rede com o ClickUp na tentativa %d/%d (%s %s): %s. "
+                        "Aguardando %.2fs...",
+                        attempt + 1,
+                        self.max_retries,
+                        method,
+                        path,
+                        exc.reason,
+                        wait_time,
+                    )
+                    time.sleep(wait_time)
+                    continue
+                raise last_error from exc
 
     def get_task_by_custom_id(self, custom_id: str):
         return self.request(
