@@ -28,7 +28,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["python", "partner_worker.py", "--poll-seconds", "60"]
+    command: ["python", "-m", "automations.partners.worker", "--poll-seconds", "60"]
     restart: "no"
 volumes:
   partner_pgdata:

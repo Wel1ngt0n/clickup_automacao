@@ -3,11 +3,10 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from fakes import FakeClickUp
-from test_partner_config import parent_task, ready_config
-
-from partner_state import PartnerStore
-from partner_workflow import reconcile_partner
+from automations.partners.service import reconcile_partner
+from automations.partners.state import PartnerStore
+from tests.partners.factories import parent_task, ready_config
+from tests.partners.fakes import FakeClickUp
 
 
 @unittest.skipUnless(

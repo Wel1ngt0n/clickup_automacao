@@ -9,7 +9,7 @@ from types import ModuleType
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from partner_state import PartnerStateError, PartnerStore, _lock_id
+from automations.partners.state import PartnerStateError, PartnerStore, _lock_id
 
 
 class PartnerStateTests(unittest.TestCase):

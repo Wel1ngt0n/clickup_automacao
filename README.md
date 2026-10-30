@@ -1,5 +1,36 @@
 # Webhook de dependências do ClickUp
 
+## Organização por função
+
+```text
+app.py                         Entrada HTTP compartilhada (app:app)
+common/                        Cliente ClickUp e leitura de ambiente
+scripts/                       Registro e manutenção do webhook
+automations/
+  integration_repair/          Correção antiga da integração do quadro principal
+    config.py                  IDs exclusivos desse quadro
+    service.py                 Dependência e correção de status
+    audit.py                   Auditoria manual
+  partners/                    Automação do novo quadro de parceiros
+    config.py                  Modelos e regras de configuração
+    service.py                 Cards, checklists, dependências e status
+    events.py                  Enfileiramento dos eventos
+    state.py                   Persistência PostgreSQL
+    worker.py                  Consumo da fila e recuperação periódica
+    templates/                 Descrições e checklists editáveis
+tests/
+  integration_repair/          Regressão da correção antiga
+  partners/                    Testes do novo quadro
+  shared/                      Testes do cliente compartilhado
+  test_webhook.py              Assinatura e entrada HTTP
+```
+
+As regras dos quadros são independentes. O endpoint `/webhook/clickup`
+identifica o fluxo e encaminha para o módulo correspondente. Os comandos antigos
+`clickup_dependency_audit.py` e `register_webhook.py` continuam válidos como
+entradas de compatibilidade; a implementação fica nas pastas acima.
+
+
 Este projeto pode rodar continuamente no Render. Sempre que uma tarefa do
 ClickUp for criada ou atualizada, o webhook lê seu campo `_father_task_id` e
 garante que ela esteja cadastrada como dependência do card principal. O serviço
@@ -130,10 +161,10 @@ existentes.
 ## Modelos de cards para parceiros
 
 Os modelos editáveis das nove etapas estão em
-[`templates/parceiros`](templates/parceiros/README.md). Cada etapa tem uma
+[`automations/partners/templates`](automations/partners/templates/README.md). Cada etapa tem uma
 descrição própria e um checklist inicial, aprovados para o teste do fluxo.
 Os nomes dos cards, responsáveis, prazos e itens de checklist ficam em
-[`modelos.json`](templates/parceiros/modelos.json); as instruções ficam nos
+[`modelos.json`](automations/partners/templates/modelos.json); as instruções ficam nos
 arquivos Markdown dessa pasta.
 
 O fluxo de parceiros é separado da correção de integração do quadro principal.
@@ -163,13 +194,13 @@ compartilhar o quadro ou conceder acesso automaticamente.
    ```powershell
    docker compose up -d --wait postgres
    docker compose --profile automation build worker
-   docker compose --profile automation run --rm worker python partner_worker.py --validate
+   docker compose --profile automation run --rm worker python -m automations.partners.worker --validate
    ```
 
 3. Confira o acesso ao ClickUp sem criar tarefas:
 
    ```powershell
-   docker compose --profile automation run --rm worker python partner_worker.py --check
+   docker compose --profile automation run --rm worker python -m automations.partners.worker --check
    ```
 
 4. Inicie o processo e acompanhe os logs:
@@ -207,7 +238,7 @@ de IDs preenchida restringe a execução somente àqueles projetos.
 Para simular uma loja sem criar cards ou gravar no banco:
 
 ```powershell
-docker compose --profile automation run --rm worker python partner_worker.py --preview-parent ID_INTERNO
+docker compose --profile automation run --rm worker python -m automations.partners.worker --preview-parent ID_INTERNO
 ```
 
 O PostgreSQL fica acessível apenas localmente, na porta `55432`, e os dados ficam
@@ -242,7 +273,7 @@ sessão), não com pool em modo transação, pois o processamento usa advisory l
 de sessão. Não há provisionamento de Supabase ou infraestrutura paga nesta etapa.
 
 No Render, a configuração atual inicia apenas `app:app`. Para ativar parceiros,
-é necessário executar também `python partner_worker.py`, conectar o mesmo banco
+é necessário executar também `python -m automations.partners.worker`, conectar o mesmo banco
 no web service e no worker e configurar `CLICKUP_PARTNER_ENABLED=true` e o mesmo
 `CLICKUP_PARTNER_START_AFTER`/limite de IDs nos dois processos. Só habilitar a flag
 do webhook enfileira eventos, mas não inicia o consumidor. Por padrão a flag é

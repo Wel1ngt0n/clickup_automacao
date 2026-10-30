@@ -9,7 +9,7 @@ import re
 import time
 from pathlib import Path
 
-CATALOG_PATH = Path(__file__).parent / "templates" / "parceiros" / "modelos.json"
+CATALOG_PATH = Path(__file__).parent / "templates" / "modelos.json"
 MAIN_LIST_ID = "901327379509"
 STAGE_LIST_IDS = {
     "901328073754",

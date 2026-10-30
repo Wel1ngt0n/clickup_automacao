@@ -38,10 +38,10 @@ Campos confirmados:
 
 ## Implementação e critérios de aceite
 
-Modelos aprovados para teste em `templates/parceiros/modelos.json`, com nove descrições e 54 itens de checklist. Carregamento, preenchimento de marcadores, checklists nativos e snapshots por loja implementados. Edições valem para novas lojas, sem sobrescrita de cards trabalhados. Financeiro já tem lista, campos herdados e coluna no ClickUp, confirmados por consulta.
+Modelos aprovados para teste em `automations/partners/templates/modelos.json`, com nove descrições e 54 itens de checklist. Carregamento, preenchimento de marcadores, checklists nativos e snapshots por loja implementados. Edições valem para novas lojas, sem sobrescrita de cards trabalhados. Financeiro já tem lista, campos herdados e coluna no ClickUp, confirmados por consulta.
 
 1. [ ] Conferir automações nativas e template antes da ativação; definir o serviço como único criador das etapas e responsável pelo status deste fluxo. Verificar se o template preenche o nome e se há regras conflitantes; responsáveis, prazos e checklists precisam de mapeamento próprio.
-2. [x] Lista/status financeiro preparados e nove destinos/status mapeados explicitamente em `partner_config.py`.
+2. [x] Lista/status financeiro preparados e nove destinos/status mapeados explicitamente em `automations/partners/config.py`.
 3. [x] Roteamento de parceiros antes dos filtros antigos; pai e etapas restritos às listas autorizadas, fluxo principal preservado.
 4. [x] Resposta Sim/Não validada; ausência e alteração posterior bloqueiam para revisão.
 5. [x] Criação/reaproveitamento, vínculo, ordem, descrições, checklists e dependências implementados, com detecção de duplicatas.

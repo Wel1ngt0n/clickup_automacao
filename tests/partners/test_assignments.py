@@ -2,11 +2,14 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from fakes import FakeClickUp, FakeStore
-from test_partner_config import parent_task, ready_config
-
-from partner_config import build_snapshot, stage_assignees, task_assignee_ids
-from partner_workflow import ensure_initial_assignment, reconcile_partner
+from automations.partners.config import (
+    build_snapshot,
+    stage_assignees,
+    task_assignee_ids,
+)
+from automations.partners.service import ensure_initial_assignment, reconcile_partner
+from tests.partners.factories import parent_task, ready_config
+from tests.partners.fakes import FakeClickUp, FakeStore
 
 
 class PartnerAssignmentTests(unittest.TestCase):

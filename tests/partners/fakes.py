@@ -1,7 +1,7 @@
 import copy
 
-from clickup_dependency_audit import ClickUpError
-from partner_state import PartnerStateError
+from automations.partners.state import PartnerStateError
+from common.clickup import ClickUpError
 
 
 class FakeStore:

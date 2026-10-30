@@ -6,8 +6,7 @@ import json
 import logging
 import os
 
-from clickup_dependency_audit import ClickUpError, dependency_pairs
-from partner_config import (
+from automations.partners.config import (
     assignment_allowed,
     build_snapshot,
     existing_client,
@@ -15,6 +14,7 @@ from partner_config import (
     stage_assignees,
     task_assignee_ids,
 )
+from common.clickup import ClickUpError, dependency_pairs
 
 logger = logging.getLogger(__name__)
 

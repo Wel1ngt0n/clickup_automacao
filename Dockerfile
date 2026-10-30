@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN useradd --create-home automation
 COPY --chown=automation:automation . .
 USER automation
-CMD ["python", "partner_worker.py"]
+CMD ["python", "-m", "automations.partners.worker"]

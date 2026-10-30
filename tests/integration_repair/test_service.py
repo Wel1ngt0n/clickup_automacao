@@ -1,19 +1,13 @@
 import copy
-import hashlib
-import hmac
-import io
-import json
 import unittest
-import urllib.error
 from unittest.mock import Mock, patch
 
 import app as webhook
+from automations.integration_repair import service as repair
 from clickup_dependency_audit import (
     DEFAULT_FATHER_FIELD_ID,
     DEFAULT_FLOW_STEP_FIELD_ID,
     DEFAULT_MAIN_LIST_ID,
-    ClickUpClient,
-    ClickUpError,
 )
 
 
@@ -51,7 +45,7 @@ class MainWorkflowRegressionTests(unittest.TestCase):
         )
         self.env.start()
         self.addCleanup(self.env.stop)
-        webhook._recent_reconciliations.clear()
+        repair._recent_reconciliations.clear()
         self.parent = main_task("parent-main", parent=True)
         self.steps = [
             main_task(f"step-{number}", number, done=number < 5)
@@ -66,7 +60,7 @@ class MainWorkflowRegressionTests(unittest.TestCase):
         )
         self.client_patch.start()
         self.addCleanup(self.client_patch.stop)
-        self.sleep_patch = patch.object(webhook.time, "sleep")
+        self.sleep_patch = patch.object(repair.time, "sleep")
         self.sleep_patch.start()
         self.addCleanup(self.sleep_patch.stop)
 
@@ -170,97 +164,3 @@ class MainWorkflowRegressionTests(unittest.TestCase):
         queue.assert_called_once()
         self.client.get_task_by_custom_id.assert_not_called()
         self.client.update_task_status.assert_not_called()
-
-
-class WebhookSignatureTests(unittest.TestCase):
-    def setUp(self):
-        self.client = webhook.app.test_client()
-        self.env = patch.dict(
-            "os.environ",
-            {"CLICKUP_WEBHOOK_SECRET": "test-signature-secret"},
-            clear=True,
-        )
-        self.env.start()
-        self.addCleanup(self.env.stop)
-
-    def test_invalid_signature_rejects_before_reading_any_task(self):
-        with patch.object(webhook, "reconcile_task") as reconcile:
-            response = self.client.post(
-                "/webhook/clickup", json={"event": "taskCreated", "task_id": "test"}
-            )
-        self.assertEqual(response.status_code, 401)
-        reconcile.assert_not_called()
-
-    def test_valid_signature_preserves_event_delivery(self):
-        body = json.dumps({"event": "taskUpdated", "task_id": "test"}).encode()
-        signature = hmac.new(b"test-signature-secret", body, hashlib.sha256).hexdigest()
-        with patch.object(
-            webhook,
-            "reconcile_task",
-            return_value={"action": "ignored", "reason": "test"},
-        ) as reconcile:
-            response = self.client.post(
-                "/webhook/clickup",
-                data=body,
-                content_type="application/json",
-                headers={"X-Signature": signature},
-            )
-        self.assertEqual(response.status_code, 200)
-        reconcile.assert_called_once_with("test")
-
-
-class ClickUpCreationRetryTests(unittest.TestCase):
-    def test_transport_failure_never_blindly_repeats_creation_posts(self):
-        client = ClickUpClient("test-token", "36953879", max_retries=3)
-        calls = (
-            lambda: client.create_task("test-list", {"name": "Loja teste"}),
-            lambda: client.create_checklist("test-task", "Conferência"),
-            lambda: client.create_checklist_item("test-checklist", "Conferir dados"),
-            lambda: client.assign_task("test-task", [12345]),
-        )
-        for operation in calls:
-            with (
-                self.subTest(operation=operation),
-                patch(
-                    "urllib.request.urlopen",
-                    side_effect=urllib.error.URLError("Connection reset"),
-                ) as urlopen,
-                patch("clickup_dependency_audit.time.sleep") as sleep,
-            ):
-                with self.assertRaises(ClickUpError):
-                    operation()
-                self.assertEqual(urlopen.call_count, 1)
-                sleep.assert_not_called()
-
-    def test_server_error_does_not_blindly_repeat_task_creation(self):
-        client = ClickUpClient("test-token", "36953879", max_retries=3)
-        failure = urllib.error.HTTPError(
-            "https://example.invalid", 503, "Unavailable", {}, io.BytesIO(b"{}")
-        )
-        self.addCleanup(failure.close)
-        with (
-            patch("urllib.request.urlopen", side_effect=failure) as urlopen,
-            patch("clickup_dependency_audit.time.sleep") as sleep,
-        ):
-            with self.assertRaises(ClickUpError):
-                client.create_task("test-list", {"name": "Loja teste"})
-            self.assertEqual(urlopen.call_count, 1)
-            sleep.assert_not_called()
-
-    def test_read_requests_keep_existing_retry_behavior(self):
-        client = ClickUpClient("test-token", "36953879", max_retries=2)
-        with (
-            patch(
-                "urllib.request.urlopen",
-                side_effect=urllib.error.URLError("Temporary connection failure"),
-            ) as urlopen,
-            patch("clickup_dependency_audit.time.sleep") as sleep,
-        ):
-            with self.assertRaises(ClickUpError):
-                client.get_task_by_internal_id("test-task")
-            self.assertEqual(urlopen.call_count, 3)
-            self.assertEqual(sleep.call_count, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

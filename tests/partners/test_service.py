@@ -2,11 +2,10 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from fakes import FakeClickUp, FakeStore
-from test_partner_config import parent_task, ready_config
-
-from clickup_dependency_audit import ClickUpError
-from partner_workflow import reconcile_partner
+from automations.partners.service import reconcile_partner
+from common.clickup import ClickUpError
+from tests.partners.factories import parent_task, ready_config
+from tests.partners.fakes import FakeClickUp, FakeStore
 
 
 class PartnerWorkflowTests(unittest.TestCase):
