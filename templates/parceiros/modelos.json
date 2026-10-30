@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "workflow": "parceiros",
+  "review_status": "approved",
+  "enabled": true,
+  "main_list_id": "901327379509",
+  "stage_folder_id": "901318457139",
+  "fields": {
+    "parent_task_id": "17f49983-94ed-47a2-9b94-8c83a0d99d79",
+    "stage_order": "1c2c44a2-b281-4a12-8349-dd115055e6c8",
+    "store_name": "2e3506bb-f020-47f2-9950-06140dc09e6a",
+    "existing_client": "c30d5569-ea0b-4799-b904-80815d513bfb"
+  },
+  "defaults": {
+    "initial_status": "não iniciado",
+    "assignee_ids": [],
+    "due_after_days": null
+  },
+  "stages": [
+    {
+      "key": "onboarding",
+      "order": 1,
+      "title": "Onboarding",
+      "list_id": "901328073754",
+      "parent_status": "onboarding",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[ONBOARDING] {{nome_loja}}",
+      "description_file": "01-onboarding.md",
+      "assignee_source": "parent",
+      "assignee_ids": [],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Onboarding da loja",
+          "items": [
+            "Conferir nome da loja, CNPJ, ERP e contato do responsável",
+            "Confirmar se a loja já é cliente Instabuy",
+            "Confirmar marketplace e escopo contratado",
+            "Alinhar o processo de implantação e as responsabilidades com a loja",
+            "Registrar pendências e informações necessárias no card principal",
+            "Confirmar que os dados permitem seguir para Criar Loja"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "criar_loja",
+      "order": 2,
+      "title": "Criar Loja",
+      "list_id": "901327577128",
+      "parent_status": "criar loja",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[CRIAR LOJA] {{nome_loja}}",
+      "description_file": "02-criar-loja.md",
+      "assignee_source": "parent",
+      "assignee_ids": [],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Preparação da loja",
+          "items": [
+            "Conferir as informações e os alinhamentos do Onboarding",
+            "Verificar se já existe uma loja ou ambiente para evitar duplicação",
+            "Preparar a loja conforme o procedimento interno aplicável",
+            "Conferir identificação e configurações iniciais da loja",
+            "Registrar o identificador da loja e os links necessários no projeto",
+            "Validar que a loja está pronta para a etapa de Integração ERP/PDV"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "integracao_erp",
+      "order": 3,
+      "title": "Integração ERP/PDV",
+      "list_id": "901327577146",
+      "parent_status": "integração",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[INTEGRAÇÃO ERP/PDV] {{nome_loja}}",
+      "description_file": "03-integracao-erp.md",
+      "assignee_source": "fixed",
+      "assignee_ids": ["81923455"],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Validação da integração ERP/PDV",
+          "items": [
+            "Confirmar o ERP/PDV informado e o escopo da integração",
+            "Verificar se a loja já possui uma integração aproveitável",
+            "Conferir os pré-requisitos com o responsável técnico",
+            "Configurar ou validar a integração conforme o procedimento interno",
+            "Validar a comunicação e os dados previstos no escopo",
+            "Registrar o resultado dos testes e as pendências no projeto"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "integracao_marketplace",
+      "order": 4,
+      "title": "Integração Marketplace",
+      "list_id": "901328325681",
+      "parent_status": "integração marketplace",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[INTEGRAÇÃO MARKETPLACE] {{nome_loja}}",
+      "description_file": "04-integracao-marketplace.md",
+      "assignee_source": "fixed",
+      "assignee_ids": ["61029153"],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Vinculação ao marketplace",
+          "items": [
+            "Confirmar o marketplace e o identificador correto do estabelecimento",
+            "Conferir os pré-requisitos e as autorizações necessárias",
+            "Configurar ou validar o vínculo conforme o procedimento interno",
+            "Validar a comunicação entre a loja e o marketplace",
+            "Registrar evidências dos testes e eventuais impedimentos",
+            "Confirmar o próximo caminho: Cadastro de produtos para cliente novo ou Qualidade para cliente existente"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "cadastro_produtos",
+      "order": 5,
+      "title": "Cadastro de produtos",
+      "list_id": "901327577197",
+      "parent_status": "cadastro produtos",
+      "applies_to": "new_clients",
+      "review_status": "approved",
+      "name_template": "[CADASTRO DE PRODUTOS] {{nome_loja}}",
+      "description_file": "05-cadastro-produtos.md",
+      "assignee_source": "parent",
+      "assignee_ids": [],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Cadastro inicial de itens",
+          "items": [
+            "Confirmar no principal que a loja não é cliente Instabuy",
+            "Receber a base e as informações necessárias para o cadastro inicial",
+            "Conferir identificadores, descrições, categorias e preços conforme o escopo",
+            "Executar o cadastro dos itens conforme o procedimento interno",
+            "Conferir duplicidades e corrigir inconsistências identificadas",
+            "Registrar a validação do cadastro e liberar a etapa de Qualidade"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "qualidade",
+      "order": 6,
+      "title": "Qualidade",
+      "list_id": "901327577154",
+      "parent_status": "qualidade",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[QUALIDADE] {{nome_loja}}",
+      "description_file": "06-qualidade.md",
+      "assignee_source": "fixed",
+      "assignee_ids": ["61029153"],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Validação da implantação",
+          "items": [
+            "Conferir as configurações da loja e os dados do estabelecimento",
+            "Conferir os resultados das integrações ERP/PDV e Marketplace",
+            "Validar os itens e preços disponíveis conforme o escopo contratado",
+            "Executar o cenário de teste definido pelo processo interno",
+            "Registrar e acompanhar a correção dos problemas encontrados",
+            "Registrar a aprovação para seguir ao Treinamento"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "treinamento",
+      "order": 7,
+      "title": "Treinamento",
+      "list_id": "901327577160",
+      "parent_status": "treinamento",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[TREINAMENTO] {{nome_loja}}",
+      "description_file": "07-treinamento.md",
+      "assignee_source": "parent",
+      "assignee_ids": [],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Orientação da equipe da loja",
+          "items": [
+            "Confirmar o responsável e os participantes do treinamento",
+            "Alinhar data e formato do treinamento",
+            "Apresentar a operação e as rotinas previstas no escopo",
+            "Orientar como registrar dúvidas e acionar o suporte",
+            "Registrar participantes, materiais enviados e dúvidas pendentes",
+            "Confirmar o entendimento e liberar Configuração financeira"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "configuracao_financeira",
+      "order": 8,
+      "title": "Configuração financeira",
+      "list_id": "1400600000003634",
+      "parent_status": "configuração financeira",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[CONFIGURAÇÃO FINANCEIRA] {{nome_loja}}",
+      "description_file": "08-configuracao-financeira.md",
+      "assignee_source": "fixed",
+      "assignee_ids": ["105951759"],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Conferência e configuração financeira",
+          "items": [
+            "Conferir as condições comerciais aprovadas para a implantação",
+            "Validar mensalidade, implantação e taxa por pedido quando aplicáveis",
+            "Confirmar o responsável pelo tratamento financeiro da loja",
+            "Encaminhar os dados necessários pelo canal interno apropriado",
+            "Concluir e validar as configurações financeiras previstas no processo interno",
+            "Registrar a confirmação do responsável e liberar Pós-Implantação"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "pos_implantacao",
+      "order": 9,
+      "title": "Pós-Implantação",
+      "list_id": "901328325698",
+      "parent_status": "pós-implantação",
+      "applies_to": "all",
+      "review_status": "approved",
+      "name_template": "[PÓS-IMPLANTAÇÃO] {{nome_loja}}",
+      "description_file": "09-pos-implantacao.md",
+      "assignee_source": "parent",
+      "assignee_ids": [],
+      "due_after_days": null,
+      "checklists": [
+        {
+          "name": "Acompanhamento e entrega",
+          "items": [
+            "Confirmar que a etapa de Configuração financeira foi concluída",
+            "Acompanhar a operação inicial conforme o período definido pelo time",
+            "Validar o funcionamento das rotinas entregues à loja",
+            "Registrar ocorrências e acompanhar as correções necessárias",
+            "Confirmar o encaminhamento para o time responsável pelo acompanhamento contínuo",
+            "Registrar o aceite e conferir todas as etapas obrigatórias antes de encerrar a implantação"
+          ]
+        }
+      ]
+    }
+  ]
+}

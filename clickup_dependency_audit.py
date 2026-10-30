@@ -14,7 +14,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-
 API_BASE = "https://api.clickup.com/api/v2"
 DEFAULT_WORKSPACE_ID = "36953879"
 DEFAULT_MAIN_LIST_ID = "211186088"
@@ -35,6 +34,8 @@ class ClickUpClient:
         self.token = token.strip()
         self.workspace_id = workspace_id.strip()
         self.max_retries = max_retries
+        self.min_request_interval = 0.0
+        self._last_request_started = 0.0
 
     def _compute_backoff(self, headers, attempt: int, is_rate_limit: bool) -> float:
         if headers:
@@ -65,14 +66,19 @@ class ClickUpClient:
         jitter = random.uniform(0.1, 0.6)
         return min(30.0, (base * (2 ** attempt)) + jitter)
 
-    def request(self, method: str, path: str, *, query=None, body=None):
+    def request(self, method: str, path: str, *, query=None, body=None, retry: bool = True):
         url = f"{API_BASE}{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query, doseq=True)
         data = None if body is None else json.dumps(body).encode("utf-8")
 
         last_error = None
-        for attempt in range(self.max_retries + 1):
+        attempts = self.max_retries if retry else 0
+        for attempt in range(attempts + 1):
+            delay = self.min_request_interval - (time.monotonic() - self._last_request_started)
+            if delay > 0:
+                time.sleep(delay)
+            self._last_request_started = time.monotonic()
             req = urllib.request.Request(
                 url,
                 data=data,
@@ -84,7 +90,7 @@ class ClickUpClient:
                 },
             )
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310 # API_BASE fixo HTTPS ClickUp
                     raw = response.read()
                     return json.loads(raw) if raw else {}
             except urllib.error.HTTPError as exc:
@@ -94,7 +100,7 @@ class ClickUpClient:
                 )
                 is_rate_limit = exc.code == 429
                 is_transient = exc.code in {500, 502, 503, 504}
-                if (is_rate_limit or is_transient) and attempt < self.max_retries:
+                if (is_rate_limit or is_transient) and attempt < attempts:
                     wait_time = self._compute_backoff(exc.headers, attempt, is_rate_limit)
                     logger.warning(
                         "ClickUp retornou HTTP %d na tentativa %d/%d (%s %s). "
@@ -112,7 +118,7 @@ class ClickUpClient:
                 raise last_error from exc
             except urllib.error.URLError as exc:
                 last_error = ClickUpError(f"Falha de conexao com o ClickUp: {exc.reason}")
-                if attempt < self.max_retries:
+                if attempt < attempts:
                     wait_time = (1.5 * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     logger.warning(
                         "Falha de rede com o ClickUp na tentativa %d/%d (%s %s): %s. "
@@ -128,6 +134,9 @@ class ClickUpClient:
                     continue
                 raise last_error from exc
 
+            except (TimeoutError, ConnectionError) as exc:
+                raise ClickUpError("Resposta do ClickUp não confirmada") from exc
+
     def get_task_by_custom_id(self, custom_id: str):
         return self.request(
             "GET",
@@ -137,6 +146,22 @@ class ClickUpClient:
 
     def get_task_by_internal_id(self, task_id: str):
         return self.request("GET", f"/task/{urllib.parse.quote(task_id)}")
+
+    def assign_task(self, task_id: str, assignee_ids: list[int]) -> dict:
+        return self.request("PUT", f"/task/{urllib.parse.quote(task_id)}",
+                            body={"assignees": {"add": assignee_ids}}, retry=False)
+
+    def create_task(self, list_id: str, payload: dict) -> dict:
+        return self.request("POST", f"/list/{urllib.parse.quote(list_id)}/task",
+                            body=payload, retry=False)
+
+    def create_checklist(self, task_id: str, name: str) -> dict:
+        return self.request("POST", f"/task/{urllib.parse.quote(task_id)}/checklist",
+                            body={"name": name}, retry=False)
+
+    def create_checklist_item(self, checklist_id: str, name: str) -> dict:
+        return self.request("POST", f"/checklist/{urllib.parse.quote(checklist_id)}/checklist_item",
+                            body={"name": name}, retry=False)
 
     def list_main_tasks(self, list_id: str):
         page = 0

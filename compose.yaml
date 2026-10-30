@@ -1,0 +1,34 @@
+name: clickup-partners-local
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: clickup_partners
+      POSTGRES_USER: clickup_local
+      POSTGRES_PASSWORD: local_development_only
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - partner_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clickup_local -d clickup_partners"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  worker:
+    build: .
+    profiles: ["automation"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PARTNER_DATABASE_URL: postgresql://clickup_local:local_development_only@postgres:5432/clickup_partners
+      CLICKUP_WORKSPACE_ID: "36953879"
+      CLICKUP_PARTNER_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "partner_worker.py", "--poll-seconds", "60"]
+    restart: "no"
+volumes:
+  partner_pgdata:

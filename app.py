@@ -12,15 +12,16 @@ import time
 from flask import Flask, jsonify, request
 
 from clickup_dependency_audit import (
-    ClickUpClient,
-    ClickUpError,
     DEFAULT_FATHER_FIELD_ID,
     DEFAULT_FLOW_STEP_FIELD_ID,
     DEFAULT_MAIN_LIST_ID,
     DEFAULT_WORKSPACE_ID,
+    ClickUpClient,
+    ClickUpError,
     dependency_pairs,
 )
-
+from partner_state import PartnerStateError
+from partner_worker import queue_partner_event
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -35,10 +36,10 @@ STATUS_INTEGRACAO = "integração erp"
 
 
 def required_env(name: str) -> str:
-    value = os.environ.get(name)
+    value = os.environ.get(name, "").strip()
     if not value:
         raise RuntimeError(f"Variavel obrigatoria ausente: {name}")
-    return value.strip()
+    return value
 
 
 def valid_signature(raw_body: bytes) -> bool:
@@ -116,6 +117,9 @@ def reconcile_task(task_id: str) -> dict:
     client = ClickUpClient(token, workspace_id)
 
     event_task = client.get_task_by_internal_id(task_id)
+    partner_result = queue_partner_event(client, event_task)
+    if partner_result is not None:
+        return partner_result
     father_custom_id = custom_field_value(event_task, father_field_id)
     event_list_id = str((event_task.get("list") or {}).get("id", ""))
     is_parent = event_list_id == main_list_id and bool(event_task.get("custom_id"))
@@ -295,7 +299,10 @@ def clickup_webhook():
     try:
         result = reconcile_task(str(task_id))
         action = result.get("action")
-        if action == "reconciled":
+        if action == "queued":
+            logger.info("Evento=%s | fluxo=parceiros | loja=%r | pai=%s | enfileirado",
+                        event, result.get("store_name"), result.get("parent_id"))
+        elif action == "reconciled":
             logger.info(
                 "Evento=%s | loja=%r | custom_id=%s | dep_integracao=%s | status=%s | trigger=%r (%s)",
                 event,
@@ -324,17 +331,20 @@ def clickup_webhook():
             )
         return jsonify(result), 200
     except ClickUpError as exc:
-        logger.exception("Falha ao processar tarefa %s: %s", task_id, exc)
+        logger.exception("Falha ao processar tarefa %s", task_id)
         is_rate_limit = getattr(exc, "status_code", None) == 429
         status_code = 429 if is_rate_limit else 502
         response = jsonify({"error": "clickup_api_error", "detail": str(exc)})
         if is_rate_limit:
             response.headers["Retry-After"] = "15"
         return response, status_code
+    except (PartnerStateError, ValueError) as exc:
+        logger.error("Configuração/armazenamento de parceiros indisponível: %s", type(exc).__name__)
+        return jsonify({"error": "partner_not_ready"}), 503
     except RuntimeError as exc:
         logger.error(str(exc))
         return jsonify({"error": "server_not_configured"}), 503
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")))  # nosec B104 # bind exigido pelo Render
